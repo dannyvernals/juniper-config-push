@@ -1,0 +1,10 @@
+---
+version: "2"
+services:
+  juniper-config-push:
+    build: .
+    image: 
+    volumes:
+      - ./:/tmp
+    tty: true
+    stdin_open: true

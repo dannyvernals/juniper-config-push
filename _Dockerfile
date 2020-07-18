@@ -1,0 +1,15 @@
+# Attempt to build all pyez dependencies from scratch, currently broken
+# Much easier just to pull from juniper/pyez
+
+FROM alpine 
+
+WORKDIR /app
+
+COPY config_push.py requirements.txt /app/
+
+RUN apk update && \ 
+    apk add python3 python3-dev py3-setuptools \ 
+            gcc musl-dev libffi-dev libxslt-dev libxml2-dev openssl-dev curl ca-certificates openssl wget && \
+    pip3 install --trusted-host pypi.python.org -r /app/requirements.txt 
+ENTRYPOINT ["python", "/app/config_push.py"]
+CMD ["--help"]

@@ -1,7 +1,7 @@
 """
 Script: config_push.py
-About: Push configuration to a multiple Juniper devices
-By: Danny Vernals 
+About: Push configuration to multiple Juniper devices
+By: Danny Vernals
 """
 
 import sys
@@ -11,7 +11,8 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from jnpr.junos.exception import (ConnectTimeoutError, ConnectRefusedError,
-                                  ConnectAuthError, ConnectUnknownHostError, ConfigLoadError)
+                                  ConnectAuthError, ConnectUnknownHostError,
+                                  ConfigLoadError)
 from jnpr.junos import Device
 from jnpr.junos.utils.config import Config
 
@@ -37,21 +38,30 @@ def logging_func(directory):
 
 def cli_grab():
     """take stuff from cli, output it in a dict"""
-    parser = argparse.ArgumentParser(description='Push config to multiple Juniper devices')
-    parser.add_argument("routers_file", help="File that contains a list of routers to update")
-    parser.add_argument("config_file", help="File that contains config you want to push")
-    parser.add_argument("config_format", help="Format of the config: xml, text or set")
-    parser.add_argument("-k", "--key", help="location of SSH key to authenticate with")
-    parser.add_argument("-t", action='store_true', help="Test run.  Apply the config, run a "
-                                                        "'show | compare' then rollback.  "
-                                                        "The change is not committed.")
-    parser.add_argument("-c", action='store_true', help="Execute a 'commit full'")
-    parser.add_argument("-f", action='store_true', help="Force: Ignore any commit errors'")
-    parser.add_argument('-d', action='store_true', help="If the -d flag is set, 'config_file' is a"
-                                                        " directory. Here device specific configs "
-                                                        "are stored. Is it used to push different "
-                                                        "configs to each router. Configs must be "
-                                                        "named ${Device}.conf")
+    parser = argparse.ArgumentParser(description="Push config to Jnpr devices")
+    parser.add_argument("routers_file",
+                        help="File that contains a list of routers to update")
+    parser.add_argument("config_file",
+                        help="File that contains config you want to push")
+    parser.add_argument("config_format",
+                        help="Format of the config: xml, text or set")
+    parser.add_argument("-k", "--key",
+                        help="location of SSH key to authenticate with")
+    parser.add_argument("-C", "--comment", help="comment to commit with")
+    parser.add_argument("-t",
+                        help="Test run.  Apply the config, run a "
+                        "'show | compare' then rollback.  "
+                        "The change is not committed.",
+                        action='store_true')
+    parser.add_argument("-c", action='store_true', help="Execute commit full")
+    parser.add_argument("-f", action='store_true',
+                        help="Force: Ignore any commit errors'")
+    parser.add_argument('-d', action='store_true',
+                        help="If the -d flag is set, 'config_file' is a "
+                        "directory. Here device specific configs "
+                        "are stored. Is it used to push different "
+                        "configs to each router. Configs must be "
+                        "named ${Device}.conf")
     args = vars(parser.parse_args())
     args['uid'] = input('username: ')
     args['pwd'] = getpass.getpass('password (blank if using SSH keys): ')
@@ -67,9 +77,9 @@ def router_connect(router, uid, pwd):
     except (ConnectTimeoutError, ConnectRefusedError, ConnectAuthError,
             ConnectUnknownHostError, ConfigLoadError) as err:
         LOGGER.info(err)
-        LOGGER.info("Skipping {} and moving onto the next router in the list".format(router))
+        LOGGER.info("Skipping {}, moving onto next router".format(router))
         return None
-    LOGGER.info("Connected to '{}'. Device hostname: '{}'. Software version: '{}'\n".format(
+    LOGGER.info("Connected to '{}'. hostname: '{}'. JunOS: '{}'\n".format(
         router,
         dev.facts['hostname'],
         dev.facts['version']
@@ -79,7 +89,10 @@ def router_connect(router, uid, pwd):
 
 
 def instantiate_config_object(dev, config_format, config_text):
-    """Instantiate an object from Config() and attempt to apply the configuration changes"""
+    """
+    Instantiate an object from Config(),
+    attempt to apply the configuration changes
+    """
     config_dev = Config(dev)
     try:
         config_dev.lock()
@@ -94,16 +107,16 @@ def instantiate_config_object(dev, config_format, config_text):
     return config_dev
 
 
-def commit_config(config_dev, commit_full):
+def commit_config(config_dev, commit_full, comment):
     """Attempt to commit the loaded configuration"""
     if config_dev.commit_check():
         LOGGER.info("Commit check passed, commiting changes\n...")
         if commit_full:
             LOGGER.info("Performing 'commit full', this could take some time!")
-            config_dev.commit(full=True, timeout=120)
+            config_dev.commit(full=True, timeout=120, comment=comment)
             LOGGER.info("Commit full complete")
         else:
-            config_dev.commit()
+            config_dev.commit(comment=comment)
             LOGGER.info("Commit complete")
     else:
         LOGGER.info("Commit failed, rolling back")
@@ -116,7 +129,13 @@ def upload_config(args):
     multi_conf = args['d']
     test_run = args['t']
     commit_full = args['c']
+
     force = args['f']
+    try:
+        comment = args['C']
+        comment = 'applied by config_push.py: ' + comment
+    except IndexError:
+        comment = 'applied by config_push.py'
     with open(args['routers_file']) as routers_raw:
         routers_list = routers_raw.read().splitlines()
     for router in routers_list:
@@ -132,11 +151,12 @@ def upload_config(args):
         if device is None:
             continue
         print("-" * 110)
-        config_dev = instantiate_config_object(device, args['config_format'], config_text)
+        config_dev = instantiate_config_object(device, args['config_format'],
+                                               config_text)
         if config_dev is None and not multi_conf and not force:
             LOGGER.info("As an error was detected in config application.\n"
-                        "The assumption is this will happen on multiple devices so exiting.\n"
-                        "To change this behaviour use '-f'.")
+                        "The assumption is this will happen on multiple \n"
+                        "devices, exiting. To change this behaviour use '-f'")
             sys.exit()
         elif config_dev is None:
             continue
@@ -150,7 +170,7 @@ def upload_config(args):
             config_dev.rollback()
             LOGGER.info("Diff is 'None' so cancelling commit")
         else:
-            commit_config(config_dev, commit_full)
+            commit_config(config_dev, commit_full, comment)
         print("-" * 110)
         config_dev.unlock()
         device.close()
